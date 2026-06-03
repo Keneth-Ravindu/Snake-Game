@@ -47,6 +47,10 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     private final int tileSize = 25;
 
     private String playerName = "Player";
+    private boolean waitingForName = true;
+    private String nameInput = "";
+    private int transitionAlpha = 255;
+    private boolean transitioningToGame = false;
 
     private Tile snakeHead;
     private ArrayList<Tile> snakeBody = new ArrayList<>();
@@ -94,8 +98,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         setFocusable(true);
         addKeyListener(this);
 
-        askPlayerName();
-
         snakeHead = new Tile(5, 5);
         rivalHead = new Tile(cols() - 6, rows() - 6);
         food = new Tile(10, 10);
@@ -105,18 +107,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         gameLoop = new Timer(speed, this);
         gameLoop.start();
-    }
-
-    private void askPlayerName() {
-        String inputName = JOptionPane.showInputDialog(
-                null,
-                "Enter your player name:",
-                "Neon Serpent",
-                JOptionPane.PLAIN_MESSAGE);
-
-        if (inputName != null && !inputName.trim().isEmpty()) {
-            playerName = inputName.trim();
-        }
     }
 
     private int cols() {
@@ -218,6 +208,18 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     }
 
     private void move() {
+        if (waitingForName)
+            return;
+
+        if (transitioningToGame) {
+            transitionAlpha -= 15;
+
+            if (transitionAlpha <= 0) {
+                transitionAlpha = 0;
+                transitioningToGame = false;
+            }
+        }
+
         if (gameOver || paused)
             return;
 
@@ -732,6 +734,11 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     @Override
     public void keyPressed(KeyEvent e) {
+        if (waitingForName) {
+            handleNameInput(e);
+            return;
+        }
+
         if (gameOver && e.getKeyCode() == KeyEvent.VK_SPACE) {
             restartGame();
             return;
@@ -768,6 +775,37 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void handleNameInput(KeyEvent e) {
+        if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+            if (!nameInput.trim().isEmpty()) {
+                playerName = nameInput.trim();
+            } else {
+                playerName = "Player";
+            }
+
+            waitingForName = false;
+            transitioningToGame = true;
+            transitionAlpha = 255;
+            repaint();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_BACK_SPACE && nameInput.length() > 0) {
+            nameInput = nameInput.substring(0, nameInput.length() - 1);
+            repaint();
+            return;
+        }
+
+        char keyChar = e.getKeyChar();
+
+        if (Character.isLetterOrDigit(keyChar) || keyChar == ' ' || keyChar == '_' || keyChar == '-') {
+            if (nameInput.length() < 14) {
+                nameInput += keyChar;
+                repaint();
+            }
+        }
+    }
+
     @Override
     public void keyTyped(KeyEvent e) {
     }
@@ -785,6 +823,11 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     private void draw(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+        if (waitingForName) {
+            drawNameScreen(g);
+            return;
+        }
+
         drawBackground(g);
         drawHud(g);
         drawGrid(g);
@@ -796,6 +839,11 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         drawRivalSnake(g);
         drawVignette(g);
 
+        if (transitioningToGame) {
+            g.setColor(new Color(0, 0, 0, transitionAlpha));
+            g.fillRect(0, 0, boardWidth, boardHeight);
+        }
+
         if (paused && !gameOver) {
             drawPauseScreen(g);
         }
@@ -803,6 +851,72 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         if (gameOver) {
             drawGameOver(g);
         }
+    }
+
+    private void drawNameScreen(Graphics2D g) {
+        GradientPaint bg = new GradientPaint(
+                0, 0, new Color(5, 15, 10),
+                boardWidth, boardHeight, new Color(0, 0, 0));
+
+        g.setPaint(bg);
+        g.fillRect(0, 0, boardWidth, boardHeight);
+
+        for (int i = 0; i < 55; i++) {
+            int x = (i * 83 + animationTick * 2) % boardWidth;
+            int y = (i * 51) % boardHeight;
+
+            g.setColor(new Color(0, 255, 130, 25));
+            g.fillOval(x, y, 3, 3);
+        }
+
+        g.setColor(new Color(0, 0, 0, 130));
+        g.fillRoundRect(75, 145, 450, 380, 35, 35);
+
+        g.setColor(new Color(0, 255, 130));
+        g.setFont(new Font("Arial", Font.BOLD, 46));
+        g.drawString("NEON SERPENT", 103, 220);
+
+        g.setColor(new Color(180, 180, 180));
+        g.setFont(new Font("Arial", Font.PLAIN, 18));
+        g.drawString("Enter your player name to begin", 165, 260);
+
+        int boxX = 130;
+        int boxY = 310;
+        int boxW = 340;
+        int boxH = 58;
+
+        g.setColor(new Color(0, 0, 0, 180));
+        g.fillRoundRect(boxX + 5, boxY + 6, boxW, boxH, 22, 22);
+
+        g.setColor(new Color(15, 30, 22, 245));
+        g.fillRoundRect(boxX, boxY, boxW, boxH, 22, 22);
+
+        g.setColor(new Color(0, 230, 110));
+        g.drawRoundRect(boxX, boxY, boxW, boxH, 22, 22);
+
+        g.setFont(new Font("Arial", Font.BOLD, 22));
+
+        if (nameInput.isEmpty()) {
+            g.setColor(new Color(130, 130, 130));
+            g.drawString("Player Name", boxX + 25, boxY + 37);
+        } else {
+            g.setColor(Color.WHITE);
+            g.drawString(nameInput, boxX + 25, boxY + 37);
+        }
+
+        if ((animationTick / 8) % 2 == 0) {
+            int cursorX = boxX + 25 + g.getFontMetrics().stringWidth(nameInput.isEmpty() ? "" : nameInput);
+            g.setColor(new Color(0, 255, 130));
+            g.drawLine(cursorX + 3, boxY + 17, cursorX + 3, boxY + 42);
+        }
+
+        g.setColor(new Color(255, 215, 80));
+        g.setFont(new Font("Arial", Font.BOLD, 18));
+        g.drawString("Press ENTER to Start", 200, 425);
+
+        g.setColor(new Color(120, 255, 170));
+        g.setFont(new Font("Arial", Font.PLAIN, 15));
+        g.drawString("Arrow Keys = Move   |   P = Pause   |   SPACE = Restart", 112, 465);
     }
 
     private void drawBackground(Graphics2D g) {
@@ -858,7 +972,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.drawString("Purple clears obstacles", 315, 88);
 
         g.setColor(new Color(80, 255, 80));
-        g.drawString("Green poison", 465, 88);
+        g.drawString("Green poison", 500, 88);
 
         if (paused) {
             g.setColor(new Color(255, 215, 80));
