@@ -30,7 +30,7 @@ __pycache__/
 .vscode/
 .idea/
 
-scores.db
+snake-backend\scores.db
 
 out/
 bin/
