@@ -23,6 +23,15 @@
 hs_err_pid*
 replay_pid*
 
-__pycache__
-*.venv
-SnakeGame\.vscode
+.venv/
+__pycache__/
+*.pyc
+
+.vscode/
+.idea/
+
+scores.db
+
+out/
+bin/
+*.class
