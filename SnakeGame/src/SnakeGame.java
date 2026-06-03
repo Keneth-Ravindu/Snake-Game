@@ -874,7 +874,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         g.setColor(new Color(0, 255, 130));
         g.setFont(new Font("Arial", Font.BOLD, 46));
-        g.drawString("NEON SERPENT", 103, 220);
+        g.drawString("NEON SERPENT", 120, 220);
 
         g.setColor(new Color(180, 180, 180));
         g.setFont(new Font("Arial", Font.PLAIN, 18));
@@ -948,13 +948,13 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.setFont(new Font("Arial", Font.BOLD, 24));
         g.drawString("NEON SERPENT", 25, 32);
 
-        drawHudCard(g, 210, 10, 120, 32, "You: " + score, Color.WHITE);
-        drawHudCard(g, 345, 10, 130, 32, "AI: " + rivalScore, new Color(90, 190, 255));
-        drawHudCard(g, 490, 10, 90, 32, "Lv: " + level, new Color(255, 215, 80));
+        drawHudCard(g, 220, 10, 120, 32, "You: " + score, Color.WHITE);
+        drawHudCard(g, 350, 10, 130, 32, "AI: " + rivalScore, new Color(90, 190, 255));
+        drawHudCard(g, 495, 10, 90, 32, "Lv: " + level, new Color(255, 215, 80));
 
         g.setColor(new Color(190, 190, 190));
-        g.setFont(new Font("Arial", Font.PLAIN, 14));
-        g.drawString("Controls: Arrow Keys = Move | P = Pause/Resume | SPACE = Restart", 45, 64);
+        g.setFont(new Font("Arial", Font.BOLD, 14));
+        g.drawString("Controls: Arrow Keys = Move | P = Pause/Resume | SPACE = Restart", 75, 64);
 
         g.setColor(new Color(180, 180, 180));
         g.setFont(new Font("Arial", Font.BOLD, 14));
