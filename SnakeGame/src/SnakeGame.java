@@ -4,7 +4,19 @@ import java.util.ArrayList;
 import java.util.Random;
 import javax.swing.*;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
 public class SnakeGame extends JPanel implements ActionListener, KeyListener {
+
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final String apiBaseUrl = "http://127.0.0.1:8000";
+
+    private String aiAdvice = "AI feedback not loaded yet.";
+    private String rivalComment = "";
+    private boolean scoreSent = false;
 
     private class Tile {
         int x, y;
@@ -31,8 +43,10 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private final int boardWidth;
     private final int boardHeight;
-    private final int hudHeight = 95;
+    private final int hudHeight = 120;
     private final int tileSize = 25;
+
+    private String playerName = "Player";
 
     private Tile snakeHead;
     private ArrayList<Tile> snakeBody = new ArrayList<>();
@@ -50,6 +64,8 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private Random random = new Random();
     private Timer gameLoop;
+
+    private boolean paused = false;
 
     private int velocityX = 1;
     private int velocityY = 0;
@@ -78,6 +94,8 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         setFocusable(true);
         addKeyListener(this);
 
+        askPlayerName();
+
         snakeHead = new Tile(5, 5);
         rivalHead = new Tile(cols() - 6, rows() - 6);
         food = new Tile(10, 10);
@@ -87,6 +105,18 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         gameLoop = new Timer(speed, this);
         gameLoop.start();
+    }
+
+    private void askPlayerName() {
+        String inputName = JOptionPane.showInputDialog(
+                null,
+                "Enter your player name:",
+                "Neon Serpent",
+                JOptionPane.PLAIN_MESSAGE);
+
+        if (inputName != null && !inputName.trim().isEmpty()) {
+            playerName = inputName.trim();
+        }
     }
 
     private int cols() {
@@ -188,7 +218,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     }
 
     private void move() {
-        if (gameOver)
+        if (gameOver || paused)
             return;
 
         animationTick++;
@@ -215,9 +245,13 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         }
 
         if (!gameOver && collision(rivalHead, food)) {
-            handleRivalFoodEffect();
-            createFoodParticles(food.x, food.y);
-            placeFood();
+            if (foodType != FoodType.POISON) {
+                handleRivalFoodEffect();
+                createFoodParticles(food.x, food.y);
+                placeFood();
+            } else {
+                updateRivalDirection();
+            }
         }
 
         updateParticles();
@@ -255,16 +289,17 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     }
 
     private void updateRivalDirection() {
-        ArrayList<int[]> moves = new ArrayList<>();
+        int[][] moves = {
+                { 1, 0 },
+                { -1, 0 },
+                { 0, 1 },
+                { 0, -1 }
+        };
 
-        moves.add(new int[] { 1, 0 });
-        moves.add(new int[] { -1, 0 });
-        moves.add(new int[] { 0, 1 });
-        moves.add(new int[] { 0, -1 });
-
-        int bestDx = rivalVelocityX;
-        int bestDy = rivalVelocityY;
-        int bestDistance = Integer.MAX_VALUE;
+        int bestDx = 0;
+        int bestDy = 0;
+        int bestScore = Integer.MAX_VALUE;
+        boolean foundMove = false;
 
         for (int[] move : moves) {
             int dx = move[0];
@@ -276,17 +311,30 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                 continue;
             }
 
-            int distance = Math.abs(nextTile.x - food.x) + Math.abs(nextTile.y - food.y);
+            int moveScore;
 
-            if (distance < bestDistance) {
-                bestDistance = distance;
+            if (foodType == FoodType.POISON) {
+                moveScore = -(Math.abs(nextTile.x - food.x) +
+                        Math.abs(nextTile.y - food.y));
+            } else {
+                moveScore = Math.abs(nextTile.x - food.x) +
+                        Math.abs(nextTile.y - food.y);
+            }
+
+            if (moveScore < bestScore) {
+                bestScore = moveScore;
                 bestDx = dx;
                 bestDy = dy;
+                foundMove = true;
             }
         }
 
-        rivalVelocityX = bestDx;
-        rivalVelocityY = bestDy;
+        if (foundMove) {
+            rivalVelocityX = bestDx;
+            rivalVelocityY = bestDy;
+        } else {
+            resetRival();
+        }
     }
 
     private boolean isSafeForRival(Tile tile) {
@@ -411,10 +459,6 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
             }
         }
 
-        if (isWallTile(rivalHead)) {
-            resetRival();
-        }
-
         for (Tile obstacle : obstacles) {
             if (collision(rivalHead, obstacle)) {
                 resetRival();
@@ -432,11 +476,112 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private void endGame(String reason) {
         gameOver = true;
+        paused = false;
         lossReason = reason;
         bestMove = calculateBestMove();
         riskLevel = calculateRiskLevel();
 
         gameLoop.stop();
+
+        if (!scoreSent) {
+            scoreSent = true;
+            sendScoreToBackend();
+            getAiAnalysisFromBackend();
+        }
+    }
+
+    private void sendScoreToBackend() {
+        String json = String.format(
+                """
+                        {
+                            "player_name": "%s",
+                            "score": %d,
+                            "level": %d,
+                            "rival_score": %d,
+                            "loss_reason": "%s",
+                            "best_move": "%s",
+                            "risk_level": "%s"
+                        }
+                        """,
+                escapeJson(playerName),
+                score,
+                level,
+                rivalScore,
+                escapeJson(lossReason),
+                escapeJson(bestMove),
+                escapeJson(riskLevel));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiBaseUrl + "/scores"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .exceptionally(error -> {
+                    System.out.println("Could not send score: " + error.getMessage());
+                    return null;
+                });
+    }
+
+    private void getAiAnalysisFromBackend() {
+        String json = String.format(
+                """
+                        {
+                            "score": %d,
+                            "level": %d,
+                            "rival_score": %d,
+                            "loss_reason": "%s",
+                            "best_move": "%s",
+                            "risk_level": "%s"
+                        }
+                        """,
+                score,
+                level,
+                rivalScore,
+                escapeJson(lossReason),
+                escapeJson(bestMove),
+                escapeJson(riskLevel));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiBaseUrl + "/analysis"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(HttpResponse::body)
+                .thenAccept(response -> {
+                    aiAdvice = extractJsonValue(response, "advice");
+                    rivalComment = extractJsonValue(response, "rival_comment");
+                    repaint();
+                })
+                .exceptionally(error -> {
+                    aiAdvice = "Backend not connected. Run FastAPI first.";
+                    rivalComment = "";
+                    repaint();
+                    return null;
+                });
+    }
+
+    private String escapeJson(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String extractJsonValue(String json, String key) {
+        String search = "\"" + key + "\":\"";
+        int start = json.indexOf(search);
+
+        if (start == -1)
+            return "";
+
+        start += search.length();
+        int end = json.indexOf("\"", start);
+
+        if (end == -1)
+            return "";
+
+        return json.substring(start, end);
     }
 
     private String calculateBestMove() {
@@ -561,11 +706,16 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         level = 1;
         speed = 100;
         gameOver = false;
+        paused = false;
         poisonTimer = 0;
 
         lossReason = "";
         bestMove = "N/A";
         riskLevel = "Low";
+
+        scoreSent = false;
+        aiAdvice = "AI feedback not loaded yet.";
+        rivalComment = "";
 
         placeFood();
         placeObstacles(8);
@@ -586,6 +736,22 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
             restartGame();
             return;
         }
+
+        if (!gameOver && e.getKeyCode() == KeyEvent.VK_P) {
+            paused = !paused;
+
+            if (paused) {
+                gameLoop.stop();
+            } else {
+                gameLoop.start();
+            }
+
+            repaint();
+            return;
+        }
+
+        if (paused || gameOver)
+            return;
 
         if (e.getKeyCode() == KeyEvent.VK_UP && velocityY != 1) {
             velocityX = 0;
@@ -630,6 +796,10 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         drawRivalSnake(g);
         drawVignette(g);
 
+        if (paused && !gameOver) {
+            drawPauseScreen(g);
+        }
+
         if (gameOver) {
             drawGameOver(g);
         }
@@ -647,7 +817,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         for (int i = 0; i < 45; i++) {
             int x = (i * 79 + animationTick * 2) % boardWidth;
-            int y = hudHeight + ((i * 47) % (boardHeight - hudHeight));
+            int y = hudHeight + ((i * 47) % Math.max(1, boardHeight - hudHeight));
             g.fillOval(x, y, 2, 2);
         }
     }
@@ -670,21 +840,31 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         g.setColor(new Color(190, 190, 190));
         g.setFont(new Font("Arial", Font.PLAIN, 14));
-        g.drawString("Controls: Arrow Keys = Move   |   SPACE = Restart after Game Over", 45, 68);
+        g.drawString("Controls: Arrow Keys = Move | P = Pause/Resume | SPACE = Restart", 45, 64);
+
+        g.setColor(new Color(180, 180, 180));
+        g.setFont(new Font("Arial", Font.BOLD, 14));
+        g.drawString("Player: " + playerName, 25, 88);
 
         g.setFont(new Font("Arial", Font.BOLD, 13));
 
         g.setColor(new Color(255, 75, 75));
-        g.drawString("Red +1", 55, 88);
+        g.drawString("Red +1", 150, 88);
 
         g.setColor(new Color(255, 210, 60));
-        g.drawString("Gold +5", 130, 88);
+        g.drawString("Gold +5", 225, 88);
 
         g.setColor(new Color(180, 90, 255));
-        g.drawString("Purple clears obstacles", 220, 88);
+        g.drawString("Purple clears obstacles", 315, 88);
 
         g.setColor(new Color(80, 255, 80));
-        g.drawString("Green poison", 410, 88);
+        g.drawString("Green poison", 465, 88);
+
+        if (paused) {
+            g.setColor(new Color(255, 215, 80));
+            g.setFont(new Font("Arial", Font.BOLD, 14));
+            g.drawString("PAUSED", 520, 112);
+        }
     }
 
     private void drawHudCard(Graphics2D g, int x, int y, int w, int h, String text, Color textColor) {
@@ -924,31 +1104,60 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.fillRect(0, boardHeight - 20, boardWidth, 20);
     }
 
-    private void drawGameOver(Graphics2D g) {
-        g.setColor(new Color(0, 0, 0, 210));
+    private void drawPauseScreen(Graphics2D g) {
+        g.setColor(new Color(0, 0, 0, 165));
         g.fillRect(0, 0, boardWidth, boardHeight);
 
-        g.setColor(new Color(0, 0, 0, 170));
-        g.fillRoundRect(70, 220, 460, 260, 30, 30);
+        int panelX = 135;
+        int panelY = 285;
+        int panelW = 330;
+        int panelH = 130;
 
-        g.setColor(new Color(255, 70, 70));
-        g.setFont(new Font("Arial", Font.BOLD, 48));
-        g.drawString("GAME OVER", 145, 285);
-
-        g.setColor(Color.WHITE);
-        g.setFont(new Font("Arial", Font.BOLD, 22));
-        g.drawString("Final Score: " + score, 215, 330);
-
-        g.setFont(new Font("Arial", Font.PLAIN, 16));
-        g.drawString(lossReason, 105, 365);
+        g.setColor(new Color(8, 12, 10, 240));
+        g.fillRoundRect(panelX, panelY, panelW, panelH, 30, 30);
 
         g.setColor(new Color(255, 215, 80));
-        g.drawString("Best Move: " + bestMove, 105, 395);
+        g.setFont(new Font("Arial", Font.BOLD, 42));
+        g.drawString("PAUSED", panelX + 77, panelY + 55);
 
-        g.setColor(new Color(255, 120, 120));
-        g.drawString("Risk Level: " + riskLevel, 105, 420);
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.PLAIN, 18));
+        g.drawString("Press P to Resume", panelX + 92, panelY + 92);
+    }
 
-        g.setColor(new Color(190, 190, 190));
-        g.drawString("Press SPACE to Restart", 200, 455);
+    private void drawGameOver(Graphics2D g) {
+        g.setColor(new Color(0, 0, 0, 150));
+        g.fillRect(0, 0, boardWidth, boardHeight);
+
+        int panelY = boardHeight - 210;
+        int panelH = 210;
+
+        g.setColor(new Color(8, 12, 10, 245));
+        g.fillRoundRect(0, panelY, boardWidth, panelH + 30, 35, 35);
+
+        g.setColor(new Color(255, 70, 70));
+        g.setFont(new Font("Arial", Font.BOLD, 34));
+        g.drawString("GAME OVER", 30, panelY + 45);
+
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.BOLD, 20));
+        g.drawString("Score: " + score + "   Level: " + level + "   AI: " + rivalScore, 30, panelY + 80);
+
+        g.setColor(new Color(220, 220, 220));
+        g.setFont(new Font("Arial", Font.PLAIN, 14));
+        g.drawString(lossReason, 30, panelY + 112);
+
+        g.setColor(new Color(255, 215, 80));
+        g.drawString("Best Move: " + bestMove + "     Risk: " + riskLevel, 30, panelY + 140);
+
+        g.setColor(new Color(120, 255, 170));
+        g.drawString("Advice: " + aiAdvice, 30, panelY + 165);
+
+        g.setColor(new Color(90, 190, 255));
+        g.drawString(rivalComment, 30, panelY + 188);
+
+        g.setColor(new Color(0, 230, 110));
+        g.setFont(new Font("Arial", Font.BOLD, 16));
+        g.drawString("Press SPACE to restart", 380, panelY + 45);
     }
 }

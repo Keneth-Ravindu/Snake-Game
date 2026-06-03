@@ -4,7 +4,7 @@ public class App {
     public static void main(String[] args) {
         try {
             int boardWidth = 600;
-            int boardHeight = 700;
+            int boardHeight = 725;
 
             JFrame frame = new JFrame("Venom Grid");
 
