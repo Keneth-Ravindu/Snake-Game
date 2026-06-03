@@ -6,7 +6,7 @@ public class App {
             int boardWidth = 600;
             int boardHeight = 800;
 
-            JFrame frame = new JFrame("Venom Grid");
+            JFrame frame = new JFrame("NEON SERPENT");
 
             SnakeGame snakeGame = new SnakeGame(boardWidth, boardHeight);
             frame.add(snakeGame);
