@@ -286,39 +286,11 @@ Implemented through:
 
 # 📸 Screenshots
 
-Add screenshots here:
 
-```text
-screenshots/
-│
-├── start-screen.png
-├── gameplay.png
-├── pause-screen.png
-├── ai-rival.png
-└── game-over-analysis.png
-```
-
-Example:
-
-```markdown
-![Start Screen](screenshots/start-screen.png)
-![Gameplay](screenshots/gameplay.png)
-![Game Over](screenshots/game-over-analysis.png)
-```
-
----
-
-# 🔮 Future Improvements
-
-- Online leaderboard
-- Multiplayer mode
-- Sound effects & music
-- A* pathfinding AI
-- Difficulty selection
-- Player skins
-- Achievement system
-- Cloud-hosted backend
-- Global rankings
+<img width="602" height="832" alt="Landing" src="https://github.com/user-attachments/assets/a4279576-2565-4533-a29b-5aa5cf4c9705" />
+<img width="602" height="832" alt="Game" src="https://github.com/user-attachments/assets/cb3f7281-67c2-4971-811f-edbbd8c9c75c" />
+<img width="602" height="832" alt="New design for GameOver" src="https://github.com/user-attachments/assets/01fcbb82-84d1-4173-80e8-05e16eb82b2d" />
+<img width="602" height="832" alt="Paused" src="https://github.com/user-attachments/assets/6f9fc38e-aca2-4d90-9a2e-e1a172cbefcc" />
 
 ---
 
