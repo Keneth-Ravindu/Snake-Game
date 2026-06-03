@@ -874,7 +874,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         g.setColor(new Color(0, 255, 130));
         g.setFont(new Font("Arial", Font.BOLD, 46));
-        g.drawString("🐍 NEON SERPENT", 103, 220);
+        g.drawString("🐍NEON SERPENT", 103, 220);
 
         g.setColor(new Color(180, 180, 180));
         g.setFont(new Font("Arial", Font.PLAIN, 18));
@@ -946,7 +946,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
         g.setColor(new Color(0, 255, 130));
         g.setFont(new Font("Arial", Font.BOLD, 24));
-        g.drawString("🐍 NEON SERPENT", 25, 32);
+        g.drawString("🐍NEON SERPENT", 25, 32);
 
         drawHudCard(g, 210, 10, 120, 32, "You: " + score, Color.WHITE);
         drawHudCard(g, 345, 10, 130, 32, "AI: " + rivalScore, new Color(90, 190, 255));
