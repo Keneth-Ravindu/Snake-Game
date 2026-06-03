@@ -27,8 +27,7 @@ replay_pid*
 __pycache__/
 *.pyc
 
-.vscode
-.vscode/
+
 .idea/
 
 snake-backend\scores.db
