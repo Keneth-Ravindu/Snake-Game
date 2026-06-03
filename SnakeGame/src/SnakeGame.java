@@ -37,6 +37,11 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     private Tile snakeHead;
     private ArrayList<Tile> snakeBody = new ArrayList<>();
 
+    private Tile rivalHead;
+    private ArrayList<Tile> rivalBody = new ArrayList<>();
+    private int rivalVelocityX = -1;
+    private int rivalVelocityY = 0;
+
     private Tile food;
     private FoodType foodType;
 
@@ -50,6 +55,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     private int velocityY = 0;
 
     private int score = 0;
+    private int rivalScore = 0;
     private int level = 1;
     private int speed = 100;
 
@@ -58,6 +64,10 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private int poisonTimer = 0;
     private final int poisonLifetime = 35;
+
+    private String lossReason = "";
+    private String bestMove = "N/A";
+    private String riskLevel = "Low";
 
     public SnakeGame(int boardWidth, int boardHeight) {
         this.boardWidth = boardWidth;
@@ -69,6 +79,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         addKeyListener(this);
 
         snakeHead = new Tile(5, 5);
+        rivalHead = new Tile(cols() - 6, rows() - 6);
         food = new Tile(10, 10);
 
         placeFood();
@@ -95,15 +106,26 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                 tile.y <= 0 || tile.y >= rows() - 1;
     }
 
+    private boolean collision(Tile a, Tile b) {
+        return a.x == b.x && a.y == b.y;
+    }
+
     private boolean isTileOccupied(Tile tile) {
         if (isWallTile(tile))
             return true;
         if (collision(tile, snakeHead))
             return true;
+        if (collision(tile, rivalHead))
+            return true;
         if (food != null && collision(tile, food))
             return true;
 
         for (Tile part : snakeBody) {
+            if (collision(tile, part))
+                return true;
+        }
+
+        for (Tile part : rivalBody) {
             if (collision(tile, part))
                 return true;
         }
@@ -165,16 +187,44 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         obstacles.add(obstacle);
     }
 
-    private boolean collision(Tile a, Tile b) {
-        return a.x == b.x && a.y == b.y;
-    }
-
     private void move() {
         if (gameOver)
             return;
 
         animationTick++;
 
+        movePlayerBody();
+        moveRivalBody();
+
+        snakeHead.x += velocityX;
+        snakeHead.y += velocityY;
+
+        updateRivalDirection();
+        rivalHead.x += rivalVelocityX;
+        rivalHead.y += rivalVelocityY;
+
+        checkCollisions();
+
+        if (!gameOver && collision(snakeHead, food)) {
+            handlePlayerFoodEffect();
+            createFoodParticles(food.x, food.y);
+
+            if (!gameOver) {
+                placeFood();
+            }
+        }
+
+        if (!gameOver && collision(rivalHead, food)) {
+            handleRivalFoodEffect();
+            createFoodParticles(food.x, food.y);
+            placeFood();
+        }
+
+        updateParticles();
+        updatePoisonTimer();
+    }
+
+    private void movePlayerBody() {
         for (int i = snakeBody.size() - 1; i >= 0; i--) {
             Tile part = snakeBody.get(i);
 
@@ -187,26 +237,78 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                 part.y = previous.y;
             }
         }
+    }
 
-        snakeHead.x += velocityX;
-        snakeHead.y += velocityY;
+    private void moveRivalBody() {
+        for (int i = rivalBody.size() - 1; i >= 0; i--) {
+            Tile part = rivalBody.get(i);
 
-        checkCollisions();
+            if (i == 0) {
+                part.x = rivalHead.x;
+                part.y = rivalHead.y;
+            } else {
+                Tile previous = rivalBody.get(i - 1);
+                part.x = previous.x;
+                part.y = previous.y;
+            }
+        }
+    }
 
-        if (!gameOver && collision(snakeHead, food)) {
-            handleFoodEffect();
-            createFoodParticles(food.x, food.y);
+    private void updateRivalDirection() {
+        ArrayList<int[]> moves = new ArrayList<>();
 
-            if (!gameOver) {
-                placeFood();
+        moves.add(new int[] { 1, 0 });
+        moves.add(new int[] { -1, 0 });
+        moves.add(new int[] { 0, 1 });
+        moves.add(new int[] { 0, -1 });
+
+        int bestDx = rivalVelocityX;
+        int bestDy = rivalVelocityY;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (int[] move : moves) {
+            int dx = move[0];
+            int dy = move[1];
+
+            Tile nextTile = new Tile(rivalHead.x + dx, rivalHead.y + dy);
+
+            if (!isSafeForRival(nextTile)) {
+                continue;
+            }
+
+            int distance = Math.abs(nextTile.x - food.x) + Math.abs(nextTile.y - food.y);
+
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestDx = dx;
+                bestDy = dy;
             }
         }
 
-        updateParticles();
-        updatePoisonTimer();
+        rivalVelocityX = bestDx;
+        rivalVelocityY = bestDy;
     }
 
-    private void handleFoodEffect() {
+    private boolean isSafeForRival(Tile tile) {
+        if (isWallTile(tile))
+            return false;
+        if (collision(tile, snakeHead))
+            return false;
+
+        for (Tile obstacle : obstacles) {
+            if (collision(tile, obstacle))
+                return false;
+        }
+
+        for (Tile part : rivalBody) {
+            if (collision(tile, part))
+                return false;
+        }
+
+        return true;
+    }
+
+    private void handlePlayerFoodEffect() {
         switch (foodType) {
             case NORMAL:
                 snakeBody.add(new Tile(food.x, food.y));
@@ -225,12 +327,26 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
                 break;
 
             case POISON:
-                gameOver = true;
-                gameLoop.stop();
+                endGame("You lost because you ate poison food.");
                 return;
         }
 
         updateLevel();
+    }
+
+    private void handleRivalFoodEffect() {
+        if (foodType == FoodType.POISON) {
+            rivalScore = Math.max(0, rivalScore - 1);
+            return;
+        }
+
+        rivalBody.add(new Tile(food.x, food.y));
+        rivalScore++;
+
+        if (foodType == FoodType.GOLDEN) {
+            rivalBody.add(new Tile(food.x, food.y));
+            rivalScore += 4;
+        }
     }
 
     private void removeObstacles(int amount) {
@@ -263,6 +379,148 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void checkCollisions() {
+        if (isWallTile(snakeHead)) {
+            endGame("You lost because you turned into a wall.");
+            return;
+        }
+
+        for (Tile part : snakeBody) {
+            if (collision(snakeHead, part)) {
+                endGame("You lost because you crashed into your own body.");
+                return;
+            }
+        }
+
+        for (Tile obstacle : obstacles) {
+            if (collision(snakeHead, obstacle)) {
+                endGame("You lost because you hit an obstacle.");
+                return;
+            }
+        }
+
+        if (collision(snakeHead, rivalHead)) {
+            endGame("You lost because you crashed into the rival snake.");
+            return;
+        }
+
+        for (Tile part : rivalBody) {
+            if (collision(snakeHead, part)) {
+                endGame("You lost because the rival snake blocked your path.");
+                return;
+            }
+        }
+
+        if (isWallTile(rivalHead)) {
+            resetRival();
+        }
+
+        for (Tile obstacle : obstacles) {
+            if (collision(rivalHead, obstacle)) {
+                resetRival();
+                break;
+            }
+        }
+    }
+
+    private void resetRival() {
+        rivalHead = new Tile(cols() - 6, rows() - 6);
+        rivalBody.clear();
+        rivalVelocityX = -1;
+        rivalVelocityY = 0;
+    }
+
+    private void endGame(String reason) {
+        gameOver = true;
+        lossReason = reason;
+        bestMove = calculateBestMove();
+        riskLevel = calculateRiskLevel();
+
+        gameLoop.stop();
+    }
+
+    private String calculateBestMove() {
+        String[] moveNames = { "RIGHT", "LEFT", "DOWN", "UP" };
+        int[][] moves = {
+                { 1, 0 },
+                { -1, 0 },
+                { 0, 1 },
+                { 0, -1 }
+        };
+
+        String best = "N/A";
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (int i = 0; i < moves.length; i++) {
+            Tile next = new Tile(
+                    snakeHead.x + moves[i][0],
+                    snakeHead.y + moves[i][1]);
+
+            if (!isSafeForPlayer(next)) {
+                continue;
+            }
+
+            int distance = Math.abs(next.x - food.x) + Math.abs(next.y - food.y);
+
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = moveNames[i];
+            }
+        }
+
+        return best;
+    }
+
+    private boolean isSafeForPlayer(Tile tile) {
+        if (isWallTile(tile))
+            return false;
+
+        for (Tile part : snakeBody) {
+            if (collision(tile, part))
+                return false;
+        }
+
+        for (Tile part : rivalBody) {
+            if (collision(tile, part))
+                return false;
+        }
+
+        if (collision(tile, rivalHead))
+            return false;
+
+        for (Tile obstacle : obstacles) {
+            if (collision(tile, obstacle))
+                return false;
+        }
+
+        return true;
+    }
+
+    private String calculateRiskLevel() {
+        int dangerCount = 0;
+
+        int[][] moves = {
+                { 1, 0 },
+                { -1, 0 },
+                { 0, 1 },
+                { 0, -1 }
+        };
+
+        for (int[] move : moves) {
+            Tile next = new Tile(snakeHead.x + move[0], snakeHead.y + move[1]);
+
+            if (!isSafeForPlayer(next)) {
+                dangerCount++;
+            }
+        }
+
+        if (dangerCount >= 3)
+            return "High";
+        if (dangerCount == 2)
+            return "Medium";
+        return "Low";
+    }
+
     private void createFoodParticles(int tileX, int tileY) {
         for (int i = 0; i < 14; i++) {
             particles.add(new Particle(
@@ -283,36 +541,15 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         }
     }
 
-    private void checkCollisions() {
-        if (snakeHead.x <= 0 ||
-                snakeHead.x >= cols() - 1 ||
-                snakeHead.y <= 0 ||
-                snakeHead.y >= rows() - 1) {
-            gameOver = true;
-        }
-
-        for (Tile part : snakeBody) {
-            if (collision(snakeHead, part)) {
-                gameOver = true;
-                break;
-            }
-        }
-
-        for (Tile obstacle : obstacles) {
-            if (collision(snakeHead, obstacle)) {
-                gameOver = true;
-                break;
-            }
-        }
-
-        if (gameOver) {
-            gameLoop.stop();
-        }
-    }
-
     private void restartGame() {
         snakeHead = new Tile(5, 5);
         snakeBody.clear();
+
+        rivalHead = new Tile(cols() - 6, rows() - 6);
+        rivalBody.clear();
+        rivalVelocityX = -1;
+        rivalVelocityY = 0;
+
         obstacles.clear();
         particles.clear();
 
@@ -320,10 +557,15 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         velocityY = 0;
 
         score = 0;
+        rivalScore = 0;
         level = 1;
         speed = 100;
         gameOver = false;
         poisonTimer = 0;
+
+        lossReason = "";
+        bestMove = "N/A";
+        riskLevel = "Low";
 
         placeFood();
         placeObstacles(8);
@@ -385,6 +627,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         drawObstacles(g);
         drawParticles(g);
         drawSnake(g);
+        drawRivalSnake(g);
         drawVignette(g);
 
         if (gameOver) {
@@ -401,6 +644,7 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.fillRect(0, 0, boardWidth, boardHeight);
 
         g.setColor(new Color(255, 255, 255, 10));
+
         for (int i = 0; i < 45; i++) {
             int x = (i * 79 + animationTick * 2) % boardWidth;
             int y = hudHeight + ((i * 47) % (boardHeight - hudHeight));
@@ -417,11 +661,12 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.fillRect(0, 0, boardWidth, hudHeight);
 
         g.setColor(new Color(0, 255, 130));
-        g.setFont(new Font("Arial", Font.BOLD, 25));
-        g.drawString("Venom Grid", 25, 32);
+        g.setFont(new Font("Arial", Font.BOLD, 24));
+        g.drawString("Neon Serpent", 25, 32);
 
-        drawHudCard(g, 230, 10, 145, 32, "Score: " + score, Color.WHITE);
-        drawHudCard(g, 405, 10, 125, 32, "Level: " + level, new Color(255, 215, 80));
+        drawHudCard(g, 210, 10, 120, 32, "You: " + score, Color.WHITE);
+        drawHudCard(g, 345, 10, 130, 32, "AI: " + rivalScore, new Color(90, 190, 255));
+        drawHudCard(g, 490, 10, 90, 32, "Lv: " + level, new Color(255, 215, 80));
 
         g.setColor(new Color(190, 190, 190));
         g.setFont(new Font("Arial", Font.PLAIN, 14));
@@ -457,8 +702,8 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.drawRoundRect(x, y, w, h, 18, 18);
 
         g.setColor(textColor);
-        g.setFont(new Font("Arial", Font.BOLD, 17));
-        g.drawString(text, x + 25, y + 22);
+        g.setFont(new Font("Arial", Font.BOLD, 15));
+        g.drawString(text, x + 18, y + 21);
     }
 
     private void drawGrid(Graphics2D g) {
@@ -591,21 +836,37 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
 
     private void drawSnake(Graphics2D g) {
         for (Tile part : snakeBody) {
-            drawSnakeBlock(g, part.x, part.y, false);
+            drawSnakeBlock(g, part.x, part.y, false, false);
         }
 
-        drawSnakeBlock(g, snakeHead.x, snakeHead.y, true);
+        drawSnakeBlock(g, snakeHead.x, snakeHead.y, true, false);
     }
 
-    private void drawSnakeBlock(Graphics2D g, int tileX, int tileY, boolean isHead) {
+    private void drawRivalSnake(Graphics2D g) {
+        for (Tile part : rivalBody) {
+            drawSnakeBlock(g, part.x, part.y, false, true);
+        }
+
+        drawSnakeBlock(g, rivalHead.x, rivalHead.y, true, true);
+    }
+
+    private void drawSnakeBlock(Graphics2D g, int tileX, int tileY, boolean isHead, boolean isRival) {
         int x = tileX * tileSize;
         int y = screenY(tileY);
 
         g.setColor(new Color(0, 0, 0, 130));
         g.fillRoundRect(x + 4, y + 5, tileSize - 3, tileSize - 3, 14, 14);
 
-        Color top = isHead ? new Color(80, 255, 160) : new Color(20, 210, 100);
-        Color bottom = isHead ? new Color(0, 150, 75) : new Color(0, 115, 60);
+        Color top;
+        Color bottom;
+
+        if (isRival) {
+            top = isHead ? new Color(95, 210, 255) : new Color(40, 160, 230);
+            bottom = isHead ? new Color(20, 80, 180) : new Color(15, 65, 145);
+        } else {
+            top = isHead ? new Color(80, 255, 160) : new Color(20, 210, 100);
+            bottom = isHead ? new Color(0, 150, 75) : new Color(0, 115, 60);
+        }
 
         GradientPaint snakeGradient = new GradientPaint(
                 x, y, top,
@@ -614,33 +875,36 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
         g.setPaint(snakeGradient);
         g.fillRoundRect(x + 1, y + 1, tileSize - 3, tileSize - 3, 14, 14);
 
-        g.setColor(new Color(180, 255, 210, 120));
+        g.setColor(new Color(220, 255, 255, 120));
         g.drawLine(x + 6, y + 5, x + tileSize - 7, y + 5);
 
-        g.setColor(new Color(0, 70, 35, 160));
+        g.setColor(new Color(0, 40, 70, 150));
         g.drawLine(x + 5, y + tileSize - 5, x + tileSize - 6, y + tileSize - 5);
 
         if (isHead) {
-            drawSnakeEyes(g, x, y);
+            drawEyes(g, x, y, isRival);
         }
     }
 
-    private void drawSnakeEyes(Graphics2D g, int headX, int headY) {
+    private void drawEyes(Graphics2D g, int headX, int headY, boolean isRival) {
         g.setColor(Color.WHITE);
 
-        if (velocityX == 1) {
+        int dx = isRival ? rivalVelocityX : velocityX;
+        int dy = isRival ? rivalVelocityY : velocityY;
+
+        if (dx == 1) {
             g.fillOval(headX + 15, headY + 6, 6, 6);
             g.fillOval(headX + 15, headY + 15, 6, 6);
             g.setColor(Color.BLACK);
             g.fillOval(headX + 17, headY + 8, 2, 2);
             g.fillOval(headX + 17, headY + 17, 2, 2);
-        } else if (velocityX == -1) {
+        } else if (dx == -1) {
             g.fillOval(headX + 4, headY + 6, 6, 6);
             g.fillOval(headX + 4, headY + 15, 6, 6);
             g.setColor(Color.BLACK);
             g.fillOval(headX + 6, headY + 8, 2, 2);
             g.fillOval(headX + 6, headY + 17, 2, 2);
-        } else if (velocityY == -1) {
+        } else if (dy == -1) {
             g.fillOval(headX + 6, headY + 4, 6, 6);
             g.fillOval(headX + 15, headY + 4, 6, 6);
             g.setColor(Color.BLACK);
@@ -661,21 +925,30 @@ public class SnakeGame extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawGameOver(Graphics2D g) {
-        g.setColor(new Color(0, 0, 0, 200));
+        g.setColor(new Color(0, 0, 0, 210));
         g.fillRect(0, 0, boardWidth, boardHeight);
 
-        g.setColor(new Color(0, 0, 0, 150));
-        g.fillRoundRect(115, 250, 370, 190, 30, 30);
+        g.setColor(new Color(0, 0, 0, 170));
+        g.fillRoundRect(70, 220, 460, 260, 30, 30);
 
         g.setColor(new Color(255, 70, 70));
-        g.setFont(new Font("Arial", Font.BOLD, 52));
-        g.drawString("GAME OVER", 145, 315);
+        g.setFont(new Font("Arial", Font.BOLD, 48));
+        g.drawString("GAME OVER", 145, 285);
 
         g.setColor(Color.WHITE);
-        g.setFont(new Font("Arial", Font.BOLD, 25));
-        g.drawString("Final Score: " + score, 215, 370);
+        g.setFont(new Font("Arial", Font.BOLD, 22));
+        g.drawString("Final Score: " + score, 215, 330);
 
-        g.setFont(new Font("Arial", Font.PLAIN, 21));
-        g.drawString("Press SPACE to Restart", 195, 415);
+        g.setFont(new Font("Arial", Font.PLAIN, 16));
+        g.drawString(lossReason, 105, 365);
+
+        g.setColor(new Color(255, 215, 80));
+        g.drawString("Best Move: " + bestMove, 105, 395);
+
+        g.setColor(new Color(255, 120, 120));
+        g.drawString("Risk Level: " + riskLevel, 105, 420);
+
+        g.setColor(new Color(190, 190, 190));
+        g.drawString("Press SPACE to Restart", 200, 455);
     }
 }
